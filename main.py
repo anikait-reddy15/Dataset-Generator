@@ -17,17 +17,15 @@ api_key =  data.get("key")
 st.set_page_config(page_title="AI Dataset generator", page_icon = ":1234:")
 st.header("Dataset Generator")
 
-def st_input():
     
-    options = ("Health", "Finance", "E-commerce", "Social media", "Environmental science",
+options = ("Health", "Finance", "E-commerce", "Social media", "Environmental science",
                "Education", "Transportation", "Marketing", "Agriculture", "Energy", "Cybersecurity",
                "Governement", "Real estate", "Entertainment", "Stock market") 
     
-    selected_option = st.selectbox(f"Choose an option : {options}")
-    text_input =  st.text_input("Explain about the dataset in detail : ")
+selected_option = st.selectbox(f"Choose an option : {options}")
+text_input =  st.text_input("Explain about the dataset in detail : ")
     
-    if st.button("Submit"):
-        return selected_option, text_input
-    
-selected_option, input_text = st_input()
+if st.button("Submit"):
+    pass
+
         
