@@ -8,9 +8,12 @@ with open(filepath, "r") as f:
     data = json.load(f)
 api_key = data.get("key")
 
+kaggle_json_path = os.path.join(kaggle_dir, "kaggle.json")
+with open(kaggle_json_path, "w") as f:
+    json.dump(data, f)
+
 st.set_page_config(page_title="AI Dataset generator", page_icon=":1234:")
 st.header("Dataset Generator")
-
 
 text_input = st.text_input("Dataset required : ")  
 
