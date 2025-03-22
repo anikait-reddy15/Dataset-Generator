@@ -1,10 +1,10 @@
 import os
-import json
 import pandas as pd
 import streamlit as st
 import subprocess
 import google.generativeai as genai
 from dotenv import load_dotenv
+from io import StringIO
 
 # Load API keys from .env file
 load_dotenv()
@@ -24,13 +24,14 @@ genai.configure(api_key=GEMINI_API_KEY)
 
 # Streamlit UI
 st.set_page_config(page_title="AI Dataset Finder", page_icon="📊")
-st.header("Dataset Creator")
+st.header("Dataset Finder")
 
 # User Input
 user_query = st.text_input("What type of dataset do you need?", placeholder="e.g., stock market trends, weather data")
 
 
 def find_best_dataset(query):
+    """Finds the best Kaggle dataset link using Gemini AI."""
     prompt = f"Find the best Kaggle dataset link for: {query}. Provide only the Kaggle dataset link."
 
     try:
@@ -49,7 +50,8 @@ def find_best_dataset(query):
         return None
 
 
-def download_kaggle_dataset(dataset_link):
+def load_kaggle_dataset(dataset_link):
+    """Loads dataset from Kaggle into a CSV string variable instead of downloading."""
     if "kaggle.com/datasets/" in dataset_link:
         dataset_id = dataset_link.split("kaggle.com/datasets/")[1]
         
@@ -61,7 +63,8 @@ def download_kaggle_dataset(dataset_link):
             files = [f for f in os.listdir() if f.endswith(".csv")]
             if files:
                 df = pd.read_csv(files[0])
-                return df, files[0]
+                csv_variable = df.to_csv(index=False)  # Store CSV as a variable
+                return csv_variable, df
             else:
                 st.error("No CSV file found in downloaded dataset.")
                 return None, None
@@ -85,15 +88,19 @@ if st.button("Find Dataset"):
         if dataset_link:
             st.success(f"Found dataset: {dataset_link}")
 
-            # Step 2: Download dataset from Kaggle
-            st.write("Downloading dataset from Kaggle...")
-            df, file_name = download_kaggle_dataset(dataset_link)
+            # Step 2: Load dataset from Kaggle into a variable
+            st.write("Fetching dataset from Kaggle...")
+            csv_variable, df = load_kaggle_dataset(dataset_link)
 
-            if df is not None:
-                st.success(f"Dataset '{file_name}' downloaded successfully!")
+            if csv_variable is not None:
+                st.success("Dataset loaded successfully into a variable!")
                 st.dataframe(df.head())  # Show first few rows
-                st.download_button("⬇ Download CSV", df.to_csv(index=False), file_name)
+                
+                # Assign dataset to variable
+                dataset_csv = csv_variable  # This variable now holds the dataset in CSV format
+                
+                st.text_area("Dataset in CSV Format:", dataset_csv, height=200)
             else:
-                st.error("Failed to download dataset.")
+                st.error("Failed to load dataset.")
     else:
         st.warning("⚠ Please enter a dataset type.")
