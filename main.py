@@ -18,11 +18,6 @@ kaggle_json_path = os.path.join(kaggle_dir, "kaggle.json")
 with open(kaggle_json_path, "w") as f:
     json.dump(data, f)
 
-# Set correct permissions (Linux/macOS)
-try:
-    os.chmod(kaggle_json_path, 0o600)
-except:
-    pass
 
 st.set_page_config(page_title="AI Dataset Generator", page_icon=":1234:")
 st.header("Dataset Generator")
@@ -32,7 +27,7 @@ text_input = st.text_input("Dataset required: ")
 def kaggle_dataset(text_input):
     try:
         cleaned_input = text_input.strip().lower()
-        command = ["kaggle", "datasets", "list", "-s", cleaned_input, "--json"]
+        command = ["kaggle", "datasets", "list", "-s", cleaned_input, "--format", "json"]
         process = subprocess.run(command, capture_output=True, text=True, check=True)
         datasets = json.loads(process.stdout)
 
