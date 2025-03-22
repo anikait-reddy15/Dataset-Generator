@@ -1,4 +1,5 @@
 import json
+import os
 import streamlit as st
 import subprocess
 
@@ -7,6 +8,9 @@ filepath = "kaggleapi.json"
 with open(filepath, "r") as f:
     data = json.load(f)
 api_key = data.get("key")
+
+kaggle_dir = os.path.expanduser("~/.kaggle")
+os.makedirs(kaggle_dir, exist_ok=True)
 
 kaggle_json_path = os.path.join(kaggle_dir, "kaggle.json")
 with open(kaggle_json_path, "w") as f:
