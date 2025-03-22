@@ -22,10 +22,9 @@ options = ("Health", "Finance", "E-commerce", "Social media", "Environmental sci
                "Education", "Transportation", "Marketing", "Agriculture", "Energy", "Cybersecurity",
                "Governement", "Real estate", "Entertainment", "Stock market") 
     
-selected_option = st.selectbox(f"Choose an option : {options}")
+selected_option = st.selectbox(f"Choose an option : ", options)
 text_input =  st.text_input("Explain about the dataset in detail : ")
     
 if st.button("Submit"):
     pass
 
-        
