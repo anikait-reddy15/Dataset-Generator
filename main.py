@@ -2,6 +2,12 @@ import json
 import streamlit as st
 import subprocess
 
+#API key integration
+filepath = "kaggleapi.json"
+with open(filepath, "r") as f:
+    data = json.load(f)
+api_key = data.get("key")
+
 st.set_page_config(page_title="AI Dataset generator", page_icon=":1234:")
 st.header("Dataset Generator")
 
