@@ -34,7 +34,7 @@ def find_best_dataset(query):
     prompt = f"Find the best Kaggle dataset link for: {query}. Provide only the Kaggle dataset link."
 
     try:
-        model = genai.GenerativeModel("gemini-pro")
+        model = genai.GenerativeModel("gemini-2.0-flash")
         response = model.generate_content(prompt)
         dataset_link = response.text.strip()
 
