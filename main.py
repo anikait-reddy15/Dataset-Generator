@@ -8,27 +8,27 @@ st.header("Dataset Generator")
 
 text_input = st.text_input("Dataset required : ")  
 
-if st.button("Submit"):
-    if text_input:
-        try:
-            cleaned_input = text_input.strip().lower()
-            command = ["kaggle", "datasets", "list", "-s", text_input, "--json"]
-            process = subprocess.run(command, capture_output=True, text=True, check=True)
-            datasets = json.loads(process.stdout)
+def kaggle_dataset(text_input):
 
-            st.write(f"Found {len(datasets)} datasets:")
-            for dataset in datasets:
-                st.write(f"**{dataset['title']}**")
-                st.write(f"Owner: {dataset['ownerUserName']}")
-                st.write(f"URL: https://www.kaggle.com/datasets/{dataset['ownerUserName']}/{dataset['slug']}")
-                st.write("---")
-        except subprocess.CalledProcessError as e:
-            st.error(f"Error searching datasets: {e}")
-        except json.JSONDecodeError:
-            st.error("Error decoding Kaggle API response.")
-        except FileNotFoundError:
-            st.error("Kaggle CLI not installed. Please install it using 'pip install kaggle'.")
-        except Exception as e:
-            st.error(f"An unexpected error occurred: {e}")
+    cleaned_input = text_input.strip().lower()
+    command = ["kaggle", "datasets", "list", "-s", cleaned_input, "--json"]
+    process = subprocess.run(command, capture_output=True, text=True, check=True)
+    datasets = json.loads(process.stdout)
+        
+    if datasets:
+        return datasets[0]
     else:
-        st.warning("Please enter a search query.")
+        return None
+            
+        
+
+if st.button("Search"):
+    if text_input:
+        dataset_info = kaggle_dataset(text_input)
+        
+        if dataset_info:
+            st.json(dataset_info)
+        else:
+            st.write("No Datasets found")
+    else:
+        st.write("No input given")
