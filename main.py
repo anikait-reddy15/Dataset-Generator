@@ -1,106 +1,121 @@
 import os
 import pandas as pd
 import streamlit as st
-import subprocess
-import google.generativeai as genai
 from dotenv import load_dotenv
-from io import StringIO
+from kaggle.api.kaggle_api_extended import KaggleApi
+from io import BytesIO
+import zipfile
+import tempfile
+from sdv.single_table import CTGANSynthesizer
+from sdv.metadata import SingleTableMetadata
 
-# Load API keys from .env file
+# Load environment variables
 load_dotenv()
 
+# Fetch API keys from .env file
 KAGGLE_USERNAME = os.getenv("KAGGLE_USERNAME")
 KAGGLE_KEY = os.getenv("KAGGLE_KEY")
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # Validate API Keys
 if not KAGGLE_USERNAME or not KAGGLE_KEY:
     st.error("Kaggle API credentials are missing in .env file!")
-if not GEMINI_API_KEY:
-    st.error("Gemini API key is missing in .env file!")
+    st.stop()
 
-# Configure Gemini AI
-genai.configure(api_key=GEMINI_API_KEY)
+# Set Kaggle API credentials
+os.environ["KAGGLE_USERNAME"] = KAGGLE_USERNAME
+os.environ["KAGGLE_KEY"] = KAGGLE_KEY
+
+# Initialize Kaggle API
+api = KaggleApi()
+api.authenticate()
 
 # Streamlit UI
 st.set_page_config(page_title="AI Dataset Finder", page_icon="📊")
-st.header("Dataset Finder")
+st.header("Dataset Loader for AI Models")
 
-# User Input
+# Initialize session state variables
+if "dataset_refs" not in st.session_state:
+    st.session_state.dataset_refs = []
+if "selected_dataset" not in st.session_state:
+    st.session_state.selected_dataset = None
+if "dataset_df" not in st.session_state:
+    st.session_state.dataset_df = None
+if "ctgan_model" not in st.session_state:
+    st.session_state.ctgan_model = None
+
+# User Input for dataset search
 user_query = st.text_input("What type of dataset do you need?", placeholder="e.g., stock market trends, weather data")
 
-
-def find_best_dataset(query):
-    """Finds the best Kaggle dataset link using Gemini AI."""
-    prompt = f"Find the best Kaggle dataset link for: {query}. Provide only the Kaggle dataset link."
-
-    try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        response = model.generate_content(prompt)
-        dataset_link = response.text.strip()
-
-        if "kaggle.com/datasets/" in dataset_link:
-            return dataset_link
-        else:
-            st.error("Gemini AI did not return a valid Kaggle dataset link.")
-            return None
-
-    except Exception as e:
-        st.error(f"Error fetching dataset from Gemini AI: {e}")
-        return None
-
-
-def load_kaggle_dataset(dataset_link):
-    """Loads dataset from Kaggle into a CSV string variable instead of downloading."""
-    if "kaggle.com/datasets/" in dataset_link:
-        dataset_id = dataset_link.split("kaggle.com/datasets/")[1]
-        
-        command = ["kaggle", "datasets", "download", "-d", dataset_id, "--unzip"]
-        try:
-            subprocess.run(command, check=True, capture_output=True, text=True)
-
-            # Find the first CSV file in the directory
-            files = [f for f in os.listdir() if f.endswith(".csv")]
-            if files:
-                df = pd.read_csv(files[0])
-                csv_variable = df.to_csv(index=False)  # Store CSV as a variable
-                return csv_variable, df
-            else:
-                st.error("No CSV file found in downloaded dataset.")
-                return None, None
-
-        except subprocess.CalledProcessError as e:
-            st.error(f"Error downloading dataset: {e}")
-            return None, None
-
-    else:
-        st.error("Invalid dataset link provided!")
-        return None, None
-
-
-# Search Button
+# Search Kaggle Datasets
 if st.button("Find Dataset"):
     if user_query:
-        st.write("🔍 Searching for the best dataset...")
-
-        # Step 1: Get dataset link from Gemini
-        dataset_link = find_best_dataset(user_query)
-        if dataset_link:
-            st.success(f"Found dataset: {dataset_link}")
-
-            # Step 2: Load dataset from Kaggle into a variable
-            st.write("Fetching dataset from Kaggle...")
-            csv_variable, df = load_kaggle_dataset(dataset_link)
-
-            if csv_variable is not None:
-                st.success("Dataset loaded successfully into a variable!")
-                st.dataframe(df.head())  # Show first few rows
-                
-                # Assign dataset to variable
-                dataset_csv = csv_variable  # This variable now holds the dataset in CSV format
-                
-                st.text_area("Dataset in CSV Format:", dataset_csv, height=200)
+        st.write("🔍 Searching for datasets on Kaggle...")
+        try:
+            datasets = api.dataset_list(search=user_query)
+            if not datasets:
+                st.error("No datasets found for this query. Try another keyword!")
             else:
-                st.error("Failed to load dataset.")
+                st.session_state.dataset_refs = [dataset.ref for dataset in datasets[:5]]
+        except Exception as e:
+            st.error(f"Error fetching datasets from Kaggle: {e}")
     else:
         st.warning("⚠ Please enter a dataset type.")
+
+# Dataset Selection
+if st.session_state.dataset_refs:
+    st.session_state.selected_dataset = st.selectbox("Select a dataset:", st.session_state.dataset_refs)
+
+# Load Selected Dataset
+if st.session_state.selected_dataset:
+    if st.button("Load Selected Dataset"):
+        st.write(f"Downloading dataset: {st.session_state.selected_dataset} ...")
+        try:
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp_file:
+                dataset_path = tmp_file.name
+                dataset_bytes = api.dataset_download_files(st.session_state.selected_dataset, path=dataset_path, unzip=False)
+
+            # Extract ZIP file
+            with zipfile.ZipFile(dataset_path, "r") as zip_file:
+                csv_files = [f for f in zip_file.namelist() if f.endswith(".csv")]
+                
+                if csv_files:  # ✅ 
+                    first_csv = csv_files[0]
+                    extracted_path = zip_file.extract(first_csv, path=tempfile.gettempdir())  # Extract CSV to temp dir
+                    st.session_state.dataset_df = pd.read_csv(extracted_path)  # Load CSV into DataFrame
+                    st.success(f"✅ Dataset '{first_csv}' loaded successfully!")
+                else:
+                    st.error("No CSV file found in the dataset.")  # ✅ Fixed indentation error
+
+        except Exception as e:
+            st.error(f"❌ Error downloading or loading dataset: {e}")
+
+# Display Dataset
+if st.session_state.dataset_df is not None:
+    st.write("### First Few Rows of the Dataset")
+    st.dataframe(st.session_state.dataset_df.head())
+
+    # CTGAN Training
+    epochs = st.number_input("Enter number of epochs for training:", min_value=1, value=10)
+    if st.button("Train CTGAN Model"):
+        st.write("🏋️ Training CTGAN model...")
+        try:
+            metadata = SingleTableMetadata()
+            metadata.detect_from_dataframe(st.session_state.dataset_df)
+            st.session_state.ctgan_model = CTGANSynthesizer(metadata, epochs=epochs)
+            st.session_state.ctgan_model.fit(st.session_state.dataset_df)
+            st.success("✅ CTGAN model trained successfully!")
+        except Exception as e:
+            st.error(f"Error training CTGAN model: {e}")
+
+    # Generate Synthetic Data
+    if st.session_state.ctgan_model:
+        num_rows = st.number_input("Enter number of synthetic rows to generate:", min_value=1, value=100)
+        if st.button("Generate Synthetic Data"):
+            st.write("🎲 Generating synthetic data...")
+            try:
+                synthetic_data = st.session_state.ctgan_model.sample(num_rows)
+                st.success(f"✅ Generated {num_rows} synthetic rows!")
+                st.write("### First Few Rows of Synthetic Data")
+                st.dataframe(synthetic_data.head())
+            except Exception as e:
+                st.error(f"Error generating synthetic data: {e}")
