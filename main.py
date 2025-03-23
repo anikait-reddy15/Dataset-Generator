@@ -5,7 +5,8 @@ from dotenv import load_dotenv
 from kaggle.api.kaggle_api_extended import KaggleApi
 import tempfile
 import threading
-from sdv.single_table import CTGAN
+from sdv.metadata import SingleTableMetadata 
+from sdv.lite import SingleTablePreset
 
 # Load environment variables
 load_dotenv()
@@ -112,4 +113,18 @@ if st.session_state.selected_dataset:
         st.write(df.head())  # Display first few rows
     else:
         st.write("No CSV files found in the cached_datasets directory.")
+        
+    #Generate metadata from dataset
+    metadata = SingleTableMetadata()
+    metadata.detect_from_dataframe(df)
 
+    #Train model
+    model = SingleTablePreset(name="ctgan", metadata=metadata)
+    model.fit(df)
+
+    #Generate Synthetic Data
+    num_values = st.number_input("Enter the number of values to be created (max 1000) : ", min_value=1, max_value=1000)
+    synthetic_data = model.sample(num_values)
+    synthetic_data.to_csv("synthetic_dataset.csv", index=False)
+
+    st.write("Synthetic dataset generated succesfully : synthetic_dataset.csv")
