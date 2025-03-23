@@ -3,11 +3,9 @@ import pandas as pd
 import streamlit as st
 from dotenv import load_dotenv
 from kaggle.api.kaggle_api_extended import KaggleApi
-from io import BytesIO
-import zipfile
 import tempfile
-from sdv.single_table import CTGANSynthesizer
-from sdv.metadata import SingleTableMetadata
+import threading
+from sdv.single_table import CTGAN
 
 # Load environment variables
 load_dotenv()
@@ -40,8 +38,33 @@ if "selected_dataset" not in st.session_state:
     st.session_state.selected_dataset = None
 if "dataset_df" not in st.session_state:
     st.session_state.dataset_df = None
-if "ctgan_model" not in st.session_state:
-    st.session_state.ctgan_model = None
+if "dataset_path" not in st.session_state:
+    st.session_state.dataset_path = ""
+
+def download_dataset(dataset_ref):
+    """Function to download and load dataset efficiently."""
+    cache_path = f"./cached_datasets/{dataset_ref.replace('/', '_')}.csv"
+    os.makedirs("./cached_datasets", exist_ok=True)
+    
+    if os.path.exists(cache_path):
+        st.session_state.dataset_df = pd.read_csv(cache_path)
+        st.success("Loaded dataset from cache!")
+        return
+    
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            api.dataset_download_files(dataset_ref, path=temp_dir, unzip=True)
+            
+            csv_files = [f for f in os.listdir(temp_dir) if f.endswith(".csv")]
+            if csv_files:
+                first_csv = os.path.join(temp_dir, csv_files[0])
+                os.rename(first_csv, cache_path)  # Cache for future use
+                st.session_state.dataset_df = pd.read_csv(cache_path)
+                st.success("Dataset downloaded and cached!")
+            else:
+                st.error("No CSV file found in dataset!")
+    except Exception as e:
+        st.error(f"Error downloading dataset: {e}")
 
 # User Input for dataset search
 user_query = st.text_input("What type of dataset do you need?", placeholder="e.g., stock market trends, weather data")
@@ -53,11 +76,11 @@ if st.button("Find Dataset"):
         try:
             datasets = api.dataset_list(search=user_query)
             if not datasets:
-                st.error("No datasets found for this query. Try another keyword!")
+                st.error("No datasets found. Try another keyword!")
             else:
                 st.session_state.dataset_refs = [dataset.ref for dataset in datasets[:5]]
         except Exception as e:
-            st.error(f"Error fetching datasets from Kaggle: {e}")
+            st.error(f"Error fetching datasets: {e}")
     else:
         st.warning("⚠ Please enter a dataset type.")
 
@@ -65,57 +88,28 @@ if st.button("Find Dataset"):
 if st.session_state.dataset_refs:
     st.session_state.selected_dataset = st.selectbox("Select a dataset:", st.session_state.dataset_refs)
 
-# Load Selected Dataset
+# Load dataset asynchronously
 if st.session_state.selected_dataset:
     if st.button("Load Selected Dataset"):
         st.write(f"Downloading dataset: {st.session_state.selected_dataset} ...")
-        try:
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".zip") as tmp_file:
-                dataset_path = tmp_file.name
-                dataset_bytes = api.dataset_download_files(st.session_state.selected_dataset, path=dataset_path, unzip=False)
+        download_thread = threading.Thread(target=download_dataset, args=(st.session_state.selected_dataset,))
+        download_thread.start()
+        download_thread.join()
 
-            # Extract ZIP file
-            with zipfile.ZipFile(dataset_path, "r") as zip_file:
-                csv_files = [f for f in zip_file.namelist() if f.endswith(".csv")]
-                
-                if csv_files:  # ✅ 
-                    first_csv = csv_files[0]
-                    extracted_path = zip_file.extract(first_csv, path=tempfile.gettempdir())  # Extract CSV to temp dir
-                    st.session_state.dataset_df = pd.read_csv(extracted_path)  # Load CSV into DataFrame
-                    st.success(f"✅ Dataset '{first_csv}' loaded successfully!")
-                else:
-                    st.error("No CSV file found in the dataset.")  # ✅ Fixed indentation error
+    # Define the directory where datasets are cached
+    cache_dir = "cached_datasets"
 
-        except Exception as e:
-            st.error(f"❌ Error downloading or loading dataset: {e}")
+    # List all files in the cached directory
+    files = os.listdir(cache_dir)
 
-# Display Dataset
-if st.session_state.dataset_df is not None:
-    st.write("### First Few Rows of the Dataset")
-    st.dataframe(st.session_state.dataset_df.head())
+    # Find the first CSV file
+    csv_files = [f for f in files if f.endswith(".csv")]
 
-    # CTGAN Training
-    epochs = st.number_input("Enter number of epochs for training:", min_value=1, value=10)
-    if st.button("Train CTGAN Model"):
-        st.write("🏋️ Training CTGAN model...")
-        try:
-            metadata = SingleTableMetadata()
-            metadata.detect_from_dataframe(st.session_state.dataset_df)
-            st.session_state.ctgan_model = CTGANSynthesizer(metadata, epochs=epochs)
-            st.session_state.ctgan_model.fit(st.session_state.dataset_df)
-            st.success("✅ CTGAN model trained successfully!")
-        except Exception as e:
-            st.error(f"Error training CTGAN model: {e}")
+    if csv_files:
+        dataset_path = os.path.join(cache_dir, csv_files[0])  # Select the first CSV file
+        df = pd.read_csv(dataset_path)  # Load dataset into DataFrame
+        st.write("Dataset loaded successfully!")
+        st.write(df.head())  # Display first few rows
+    else:
+        st.write("No CSV files found in the cached_datasets directory.")
 
-    # Generate Synthetic Data
-    if st.session_state.ctgan_model:
-        num_rows = st.number_input("Enter number of synthetic rows to generate:", min_value=1, value=100)
-        if st.button("Generate Synthetic Data"):
-            st.write("🎲 Generating synthetic data...")
-            try:
-                synthetic_data = st.session_state.ctgan_model.sample(num_rows)
-                st.success(f"✅ Generated {num_rows} synthetic rows!")
-                st.write("### First Few Rows of Synthetic Data")
-                st.dataframe(synthetic_data.head())
-            except Exception as e:
-                st.error(f"Error generating synthetic data: {e}")
