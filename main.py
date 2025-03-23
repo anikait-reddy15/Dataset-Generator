@@ -4,9 +4,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from kaggle.api.kaggle_api_extended import KaggleApi
 import tempfile
-import threading
-from sdv.metadata import SingleTableMetadata 
-from sdv.lite import SingleTablePreset
+import zipfile
 
 # Load environment variables
 load_dotenv()
@@ -39,33 +37,43 @@ if "selected_dataset" not in st.session_state:
     st.session_state.selected_dataset = None
 if "dataset_df" not in st.session_state:
     st.session_state.dataset_df = None
-if "dataset_path" not in st.session_state:
-    st.session_state.dataset_path = ""
+if "temp_dir" not in st.session_state:
+    st.session_state.temp_dir = None  
 
-def download_dataset(dataset_ref):
-    """Function to download and load dataset efficiently."""
-    cache_path = f"./cached_datasets/{dataset_ref.replace('/', '_')}.csv"
-    os.makedirs("./cached_datasets", exist_ok=True)
+def download_dataset(dataset_ref, max_rows=5000):
+    """Download, extract, and load dataset."""
     
-    if os.path.exists(cache_path):
-        st.session_state.dataset_df = pd.read_csv(cache_path)
-        st.success("Loaded dataset from cache!")
-        return
-    
+    temp_dir = tempfile.TemporaryDirectory()
+    st.session_state.temp_dir = temp_dir  # Store temp directory
+    dataset_path = temp_dir.name  # Correct path reference
+
     try:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            api.dataset_download_files(dataset_ref, path=temp_dir, unzip=True)
-            
-            csv_files = [f for f in os.listdir(temp_dir) if f.endswith(".csv")]
-            if csv_files:
-                first_csv = os.path.join(temp_dir, csv_files[0])
-                os.rename(first_csv, cache_path)  # Cache for future use
-                st.session_state.dataset_df = pd.read_csv(cache_path)
-                st.success("Dataset downloaded and cached!")
-            else:
-                st.error("No CSV file found in dataset!")
+        st.write("🔄 Downloading dataset... Please wait.")
+        api.dataset_download_files(dataset_ref, path=dataset_path, unzip=True)  # Unzip during download
+        
+        # Check files in directory
+        files = os.listdir(dataset_path)
+        st.write(f"📂 Extracted Files: {files}")  # Debugging output
+
+        # Find CSV files
+        csv_files = [f for f in files if f.endswith(".csv")]
+
+        if not csv_files:
+            st.error("No CSV files found in the extracted dataset!")
+            return
+        
+        # Select the largest CSV file
+        csv_files.sort(key=lambda f: os.path.getsize(os.path.join(dataset_path, f)), reverse=True)
+        selected_csv = csv_files[0]
+        full_csv_path = os.path.join(dataset_path, selected_csv)
+
+        # Load dataset
+        df = pd.read_csv(full_csv_path, nrows=max_rows)
+        st.session_state.dataset_df = df
+        st.success(f"✅ Dataset '{selected_csv}' loaded successfully!")
+
     except Exception as e:
-        st.error(f"Error downloading dataset: {e}")
+        st.error(f"⚠ Error downloading dataset: {e}")
 
 # User Input for dataset search
 user_query = st.text_input("What type of dataset do you need?", placeholder="e.g., stock market trends, weather data")
@@ -89,42 +97,19 @@ if st.button("Find Dataset"):
 if st.session_state.dataset_refs:
     st.session_state.selected_dataset = st.selectbox("Select a dataset:", st.session_state.dataset_refs)
 
-# Load dataset asynchronously
+# Load dataset synchronously
 if st.session_state.selected_dataset:
     if st.button("Load Selected Dataset"):
-        st.write(f"Downloading dataset: {st.session_state.selected_dataset} ...")
-        download_thread = threading.Thread(target=download_dataset, args=(st.session_state.selected_dataset,))
-        download_thread.start()
-        download_thread.join()
+        with st.spinner("Downloading and loading dataset..."):
+            download_dataset(st.session_state.selected_dataset)
 
-    # Define the directory where datasets are cached
-    cache_dir = "cached_datasets"
+    # Display dataset
+    if st.session_state.dataset_df is not None:
+        df = st.session_state.dataset_df
+        st.write("📊 **Dataset Preview:**")
+        st.write(df.head())  # Show first few rows
 
-    # List all files in the cached directory
-    files = os.listdir(cache_dir)
-
-    # Find the first CSV file
-    csv_files = [f for f in files if f.endswith(".csv")]
-
-    if csv_files:
-        dataset_path = os.path.join(cache_dir, csv_files[0])  # Select the first CSV file
-        df = pd.read_csv(dataset_path)  # Load dataset into DataFrame
-        st.write("Dataset loaded successfully!")
-        st.write(df.head())  # Display first few rows
-    else:
-        st.write("No CSV files found in the cached_datasets directory.")
-        
-    #Generate metadata from dataset
-    metadata = SingleTableMetadata()
-    metadata.detect_from_dataframe(df)
-
-    #Train model
-    model = SingleTablePreset(name="ctgan", metadata=metadata)
-    model.fit(df)
-
-    #Generate Synthetic Data
-    num_values = st.number_input("Enter the number of values to be created (max 1000) : ", min_value=1, max_value=1000)
-    synthetic_data = model.sample(num_values)
-    synthetic_data.to_csv("synthetic_dataset.csv", index=False)
-
-    st.write("Synthetic dataset generated succesfully : synthetic_dataset.csv")
+# Cleanup temporary directory (if exists)
+if "temp_dir" in st.session_state and st.session_state.temp_dir:
+    st.session_state.temp_dir.cleanup()
+    st.session_state.temp_dir = None  # Clear temp dir reference
