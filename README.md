@@ -4,8 +4,6 @@
 
 A Streamlit-based tool to search, download, and generate synthetic datasets from Kaggle for AI/ML projects.
 
-![Demo](https://via.placeholder.com/800x400?text=AI+Dataset+Finder+Demo) *(Replace with actual screenshot/gif)*
-
 ## Features ✨
 
 - 🔍 **Kaggle Dataset Search**: Find relevant datasets using natural language queries
