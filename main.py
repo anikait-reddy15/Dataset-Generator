@@ -124,7 +124,7 @@ if st.session_state.selected_dataset:
                     metadata.detect_from_dataframe(df)
 
                     # Use the correct preset for synthetic data
-                    model = SingleTablePreset(name="FAST_ML", metadata=metadata)  # Fixed here
+                    model = SingleTablePreset(name="FAST_ML", metadata=metadata) 
                     model.fit(df)
 
                     # Store model in session state
